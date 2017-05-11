@@ -24,13 +24,16 @@ public interface MVP_Main {
 
         void reset_view();
 
-        void set_track_info(String track_name, String artist, String cover_link, int max_duration);
+        void set_track_info(String track_name, String artist, String cover_link, String max_duration);
 
-        void setposition_and_state(int position, boolean isplaying);
+        void setposition_and_state(String position, boolean isplaying);
 
         void set_progress_buffer(int progress);
 
-        void appear_progressbar();
+        Bitmap get_bitmap();
+
+        void set_current_timer(String timer);
+
 
     }
 
@@ -89,7 +92,9 @@ public interface MVP_Main {
 
         void handleIncomingActions(Intent playbackAction);
 
-        Bitmap getBitmapFromURL(String img_url);
+        void the_loop();
+
+        void send_current_time();
     }
 
     interface model_stuff {
@@ -121,21 +126,21 @@ public interface MVP_Main {
 
         ArrayList<music_file_object> getAudioList();
 
-        int request_resume_position();
+        String request_resume_position();
 
-        int request_current_position();
+        String request_current_position();
 
         void set_resume_position(int resume_position);
 
         void set_current_position(int current_position);
 
-        int from_milli_to_second(int milli);
-
-        void updateUI(boolean isPlaying, int position);
+        void updateUI(boolean isPlaying, String position);
 
         void reseting_view();
-        void appear_progressbar();
 
-        void setInfoForFirstTime();
+        Bitmap get_bitmap();
+
+        void set_timer_in_view(int milli);
+
     }
 }

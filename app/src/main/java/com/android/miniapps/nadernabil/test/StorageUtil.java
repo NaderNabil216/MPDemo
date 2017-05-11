@@ -38,6 +38,17 @@ public class StorageUtil {
         editor.apply();
     }
 
+    public void storePauseState(int state){
+        preferences = context.getSharedPreferences(STORAGE, Context.MODE_PRIVATE);
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putInt("pauseState", state);
+        editor.apply();
+    }
+    public int loadPauseState() {
+        preferences = context.getSharedPreferences(STORAGE, Context.MODE_PRIVATE);
+        return preferences.getInt("pauseState", 1);//return -1 if no data found
+    }
+
     public int loadAudioIndex() {
         preferences = context.getSharedPreferences(STORAGE, Context.MODE_PRIVATE);
         return preferences.getInt("audioIndex", -1);//return -1 if no data found

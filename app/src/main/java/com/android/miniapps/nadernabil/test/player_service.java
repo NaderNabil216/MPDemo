@@ -8,11 +8,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.media.session.MediaSessionManager;
 import android.os.Binder;
+import android.os.Handler;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.support.annotation.Nullable;
@@ -25,9 +25,6 @@ import android.telephony.TelephonyManager;
 import android.util.Log;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.ArrayList;
 
 
@@ -36,7 +33,6 @@ import java.util.ArrayList;
  */
 
 public class player_service extends Service implements MVP_Main.service_stuff {
-    Presenter presenter;
     private final IBinder mbinder = new LocalBinder();
     private MediaPlayer mediaPlayer;
     private AudioManager audioManager;
@@ -59,6 +55,8 @@ public class player_service extends Service implements MVP_Main.service_stuff {
     //AudioPlayer notification ID
     private static final int NOTIFICATION_ID = 101;
 
+    private boolean flag = false;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -69,7 +67,6 @@ public class player_service extends Service implements MVP_Main.service_stuff {
         callStateListener();
         //ACTION_AUDIO_BECOMING_NOISY -- change in audio outputs -- BroadcastReceiver
         registerBecomingNoisyReceiver();
-        //Listen for new Audio to play -- BroadcastReceiver
         register_playNewAudio();
         register_pause();
         register_playNextAudio();
@@ -77,6 +74,7 @@ public class player_service extends Service implements MVP_Main.service_stuff {
         register_resume();
         register_request_current_position();
         register_request_resume_position();
+
 
     }
 
@@ -107,12 +105,11 @@ public class player_service extends Service implements MVP_Main.service_stuff {
             try {
                 initMediaSession();
                 initMediaPlayer();
-                // TODO: 4/19/2017 presenter.initmpv as a view 3ady
             } catch (RemoteException e) {
                 e.printStackTrace();
                 stopSelf();
             }
-            buildNotification(Status.PLAYING);
+//            buildNotification(Status.PLAYING);
         }
         //Handle Intent action from MediaSession.TransportControls
         handleIncomingActions(intent);
@@ -133,15 +130,18 @@ public class player_service extends Service implements MVP_Main.service_stuff {
         }
         removeNotification();
         //unregister BroadcastReceivers
-        unregisterReceiver(becomingNoisyReceiver);
-        unregisterReceiver(playNewAudio);
-        unregisterReceiver(playNextAudio);
-        unregisterReceiver(playPreviousAudio);
-        unregisterReceiver(PauseAudio);
-        unregisterReceiver(ResumeAudio);
-        unregisterReceiver(requestCurrentPosition);
-        unregisterReceiver(requestResumePosition);
-
+        try {
+            unregisterReceiver(becomingNoisyReceiver);
+            unregisterReceiver(playNewAudio);
+            unregisterReceiver(playNextAudio);
+            unregisterReceiver(playPreviousAudio);
+            unregisterReceiver(PauseAudio);
+            unregisterReceiver(ResumeAudio);
+            unregisterReceiver(requestCurrentPosition);
+            unregisterReceiver(requestResumePosition);
+        } catch (Exception e) {
+            Log.e("player error", "" + e);
+        }
         //clear cached playlist
         new StorageUtil(this).clearCachedAudioPlaylist();
     }
@@ -154,17 +154,16 @@ public class player_service extends Service implements MVP_Main.service_stuff {
 
     @Override
     public void onBufferingUpdate(MediaPlayer mp, int percent) {
-        if (presenter != null) {
-            presenter.set_buffer(percent);
-        }
+        controller.getInstance().getPresenter().set_buffer(percent);
 
     }
 
     @Override
     public void onCompletion(MediaPlayer mp) {
-        skipToNext();
-        updateMetaData();
-        buildNotification(Status.PLAYING);
+//        skipToNext();
+//        updateMetaData();
+//        buildNotification(Status.PLAYING);
+
     }
 
     @Override
@@ -188,16 +187,19 @@ public class player_service extends Service implements MVP_Main.service_stuff {
 
     @Override
     public void onPrepared(MediaPlayer mp) {
-        presenter.appear_progressbar();
+        buildNotification(Status.PLAYING);
         play();
+
     }
 
     @Override
     public void play() {
         if (!mediaPlayer.isPlaying()) {
             mediaPlayer.start();
-            presenter.play(0);
+            controller.getInstance().getPresenter().play(0);
             new StorageUtil(this).storePlayerState(true);
+            the_loop();
+
         }
     }
 
@@ -206,8 +208,9 @@ public class player_service extends Service implements MVP_Main.service_stuff {
         if (mediaPlayer.isPlaying()) {
             mediaPlayer.pause();
             resumePosition = mediaPlayer.getCurrentPosition();
-            presenter.pause(resumePosition);
+            controller.getInstance().getPresenter().pause(resumePosition);
             new StorageUtil(this).storePlayerState(false);
+            new StorageUtil(this).storePauseState(1);
         }
 
     }
@@ -231,7 +234,6 @@ public class player_service extends Service implements MVP_Main.service_stuff {
             stopSelf();
         }
         mediaPlayer.prepareAsync();
-        // TODO: 4/19/2017 reset mpv with new data
     }
 
     @Override
@@ -248,8 +250,9 @@ public class player_service extends Service implements MVP_Main.service_stuff {
         if (!mediaPlayer.isPlaying()) {
             mediaPlayer.seekTo(resumePosition);
             mediaPlayer.start();
-            presenter.play(resumePosition);
+            controller.getInstance().getPresenter().play(resumePosition);
             new StorageUtil(this).storePlayerState(true);
+            the_loop();
         }
     }
 
@@ -262,6 +265,7 @@ public class player_service extends Service implements MVP_Main.service_stuff {
             buildNotification(Status.PAUSED);
         }
     };
+
 
     @Override
     public void registerBecomingNoisyReceiver() {
@@ -301,6 +305,7 @@ public class player_service extends Service implements MVP_Main.service_stuff {
     private BroadcastReceiver playNextAudio = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            Log.e("nader", "reach broadcast");
             skipToNext();
             updateMetaData();
             buildNotification(Status.PLAYING);
@@ -311,6 +316,7 @@ public class player_service extends Service implements MVP_Main.service_stuff {
     public void register_playNextAudio() {
         IntentFilter intentFilter = new IntentFilter(Constants.playNextIntent);
         registerReceiver(playNewAudio, intentFilter);
+        Log.e("nader", "register done");
     }
 
     private BroadcastReceiver playPreviousAudio = new BroadcastReceiver() {
@@ -361,14 +367,14 @@ public class player_service extends Service implements MVP_Main.service_stuff {
     private BroadcastReceiver requestResumePosition = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            presenter.set_resume_position(resumePosition);
+            controller.getInstance().getPresenter().set_resume_position(resumePosition);
         }
     };
 
     private BroadcastReceiver requestCurrentPosition = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            presenter.set_current_position(mediaPlayer.getCurrentPosition());
+            controller.getInstance().getPresenter().set_current_position(mediaPlayer.getCurrentPosition());
         }
     };
 
@@ -452,9 +458,8 @@ public class player_service extends Service implements MVP_Main.service_stuff {
 
     @Override
     public void updateMetaData() {
-        //   Bitmap albumArt = getBitmapFromURL(activeAudio.getAudio_cover_image());
-        Bitmap albumArt = BitmapFactory.decodeResource(getResources(),
-                R.drawable.placeholder);
+        Bitmap albumArt = controller.getInstance().getPresenter().get_bitmap();
+        Log.d("nader", "at media session");
         // Update the current metadata
         mediaSession.setMetadata(new MediaMetadataCompat.Builder()
                 .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, albumArt)
@@ -478,7 +483,7 @@ public class player_service extends Service implements MVP_Main.service_stuff {
         stopMedia();
         //reset mediaPlayer
         mediaPlayer.reset();
-        presenter.play_next();
+        controller.getInstance().getPresenter().play_next();
         initMediaPlayer();
     }
 
@@ -498,7 +503,7 @@ public class player_service extends Service implements MVP_Main.service_stuff {
         stopMedia();
         //reset mediaPlayer
         mediaPlayer.reset();
-        presenter.play_prev();
+        controller.getInstance().getPresenter().play_prev();
         initMediaPlayer();
     }
 
@@ -517,8 +522,7 @@ public class player_service extends Service implements MVP_Main.service_stuff {
             play_pauseAction = playbackAction(0);
         }
 
-        Bitmap largeIcon = BitmapFactory.decodeResource(getResources(),
-                R.drawable.placeholder);
+        Bitmap largeIcon = controller.getInstance().getPresenter().get_bitmap();
 
         // Create a new Notification
         NotificationCompat.Builder notificationBuilder = (NotificationCompat.Builder) new NotificationCompat.Builder(this)
@@ -579,6 +583,7 @@ public class player_service extends Service implements MVP_Main.service_stuff {
         return null;
     }
 
+
     @Override
     public void handleIncomingActions(Intent playbackAction) {
         if (playbackAction == null || playbackAction.getAction() == null) return;
@@ -591,25 +596,27 @@ public class player_service extends Service implements MVP_Main.service_stuff {
             transportControls.skipToNext();
         } else if (actionString.equalsIgnoreCase(Constants.ACTION_PREVIOUS)) {
             transportControls.skipToPrevious();
-        } else if (actionString.equalsIgnoreCase(Constants.ACTION_STOP)) {
-            transportControls.stop();
         }
     }
 
     @Override
-    public Bitmap getBitmapFromURL(String img_url) {
-
-        try {
-            URL url = new URL(img_url);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setDoInput(true);
-            connection.connect();
-            InputStream input = connection.getInputStream();
-            return BitmapFactory.decodeStream(input);
-        } catch (IOException e) {
-            // Log exception
-            return null;
+    public void the_loop() {
+        send_current_time();
+        if (mediaPlayer.isPlaying()) {
+            Handler handler = new Handler(this.getMainLooper());
+            handler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    the_loop();
+                    send_current_time();
+                }
+            }, 1000);
         }
+    }
+
+    @Override
+    public void send_current_time() {
+        controller.getInstance().getPresenter().set_timer_in_view(mediaPlayer.getCurrentPosition());
     }
 
     @Override
@@ -671,7 +678,9 @@ public class player_service extends Service implements MVP_Main.service_stuff {
             case AudioManager.AUDIOFOCUS_GAIN:
                 // resume playback
                 if (mediaPlayer == null) initMediaPlayer();
-                else if (!mediaPlayer.isPlaying()) mediaPlayer.start();
+                else if (!mediaPlayer.isPlaying() && (new StorageUtil(this).loadPauseState() == 0)) {
+                    mediaPlayer.start();
+                }
                 mediaPlayer.setVolume(1.0f, 1.0f);
                 break;
             case AudioManager.AUDIOFOCUS_LOSS:
@@ -684,7 +693,10 @@ public class player_service extends Service implements MVP_Main.service_stuff {
                 // Lost focus for a short time, but we have to stop
                 // playback. We don't release the media player because playback
                 // is likely to resume
-                if (mediaPlayer.isPlaying()) mediaPlayer.pause();
+                if (mediaPlayer.isPlaying()) {
+                    mediaPlayer.pause();
+                    new StorageUtil(this).storePauseState(0);
+                }
                 break;
             case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
                 // Lost focus for a short time, but it's ok to keep playing
@@ -695,9 +707,8 @@ public class player_service extends Service implements MVP_Main.service_stuff {
     }
 
     public class LocalBinder extends Binder {
-
-        void set_presenter(Presenter presenter) {
-            player_service.this.presenter = presenter;
+        public player_service getService() {
+            return player_service.this;
         }
 
     }

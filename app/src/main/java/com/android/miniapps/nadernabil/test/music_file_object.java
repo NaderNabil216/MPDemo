@@ -6,7 +6,7 @@ package com.android.miniapps.nadernabil.test;
 
 public class music_file_object {
     private String audio_name;
-    private int duration; // in seconds
+    private int duration; // in millis
     private String audio_cover_image;
     private String stream_url;
     private String artist;

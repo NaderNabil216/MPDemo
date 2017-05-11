@@ -4,47 +4,61 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.PersistableBundle;
 import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
 import android.view.View;
+import android.view.animation.Animation;
+import android.view.animation.AnimationUtils;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
+import android.widget.RelativeLayout;
 import android.widget.TextView;
+
+import com.squareup.picasso.Picasso;
 
 import butterknife.BindView;
 import butterknife.ButterKnife;
-import co.mobiwise.library.MusicPlayerView;
 
 
 public class MainActivity extends AppCompatActivity implements MVP_Main.view_stuff {
 
-    @BindView(R.id.mpv)
-    MusicPlayerView mpv;
-    @BindView(R.id.artist_textView)
+    @BindView(R.id.artist_image)
+    ImageView cover;
+    @BindView(R.id.artist_name)
     TextView artist;
-    @BindView(R.id.progressbar)
+    @BindView(R.id.progressBar)
     ProgressBar buffering_ProgressBar;
-    @BindView(R.id.track_title)
+    @BindView(R.id.song_title)
     TextView title;
-    @BindView(R.id.playing_next)
-    ImageView next_btn;
-    @BindView(R.id.playing_previous)
-    ImageView prev_btn;
-    Presenter presenter;
+    @BindView(R.id.current_time)
+    TextView Current;
+    @BindView(R.id.max_duration)
+    TextView Max;
+    @BindView(R.id.fab)
+    RelativeLayout fab;
+    @BindView(R.id.control)
+    ImageView playback;
 
+    Presenter presenter;
     boolean isBind = false;
+    player_service Service;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         ButterKnife.bind(this);
         presenter = new Presenter(getApplicationContext(), this, new model());
-        mpv.setOnClickListener(this);
-        next_btn.setOnClickListener(this);
-        prev_btn.setOnClickListener(this);
-
+        controller.getInstance().setPresenter(presenter);
+        fab.setOnClickListener(this);
+        music_file_object object = presenter.getAudioList().get(0);
+        cover.setDrawingCacheEnabled(true);
+        set_track_info(object.getAudio_name(), object.getArtist(), object.getAudio_cover_image(), presenter.change(object.getDuration()));
     }
 
     @Override
@@ -54,7 +68,6 @@ public class MainActivity extends AppCompatActivity implements MVP_Main.view_stu
             StorageUtil storage = new StorageUtil(getApplicationContext());
             storage.storeAudio(presenter.getAudioList());
             storage.storeAudioIndex(0);
-//            presenter.setInfoForFirstTime();
             Intent playerIntent = new Intent(this, player_service.class);
             startService(playerIntent);
             bindService(playerIntent, mConnection, Context.BIND_AUTO_CREATE);
@@ -72,81 +85,76 @@ public class MainActivity extends AppCompatActivity implements MVP_Main.view_stu
 
     @Override
     public void onClick(View v) {
-        switch (v.getId()){
-            case R.id.mpv:
-                if (new StorageUtil(getApplicationContext()).loadAudioState()){
-                    presenter.call_pause();
-                }else{
-                    presenter.call_resume();
-                }
-                break;
-            case R.id.playing_next:
-                presenter.call_play_next();
-                break;
-            case R.id.playing_previous:
-                presenter.call_play_prev();
-                break;
-
+        if (new StorageUtil(getApplicationContext()).loadAudioState()) {
+            presenter.call_pause();
+        } else {
+            presenter.call_resume();
         }
     }
 
     @Override
     public void play_view(int position) {
-        mpv.setProgress(position);
-        mpv.start();
+        change_playback(this, playback, R.drawable.pause);
+        if (position == 0) {
+            Current.setText("00:00");
+        }
     }
 
     @Override
     public void pause_view(int position) {
-        mpv.stop();
-        mpv.setProgress(position);
+        change_playback(this, playback, R.drawable.play);
     }
 
     @Override
     public void reset_view() {
-        mpv.stop();
-        mpv.setMax(0);
-        mpv.setProgressVisibility(false);
         title.setText("");
         artist.setText("");
-        buffering_ProgressBar.setProgress(0);
     }
 
     @Override
-    public void set_track_info(String track_name, String artist, String cover_link, int max_duration) {
-        mpv.setCoverURL(cover_link);
-        mpv.setMax(max_duration);
+    public void set_track_info(String track_name, String artist, String cover_link, String max_duration) {
+        Picasso.with(this).load(cover_link).into(cover);
+        Log.d("nader", "Reached picasso");
+        Max.setText(max_duration);
         this.artist.setText(artist);
         title.setText(track_name);
     }
 
     @Override
-    public void setposition_and_state(int position, boolean isplaying) {
-
+    public void setposition_and_state(String position, boolean isplaying) {
+        change_playback(this, playback, R.drawable.play);
+        Current.setText(position);
         if (isplaying) {
-            mpv.stop();
-        } else {
-
-            mpv.start();
-            mpv.setProgress(position);
+            change_playback(this, playback, R.drawable.pause);
         }
     }
 
     @Override
     public void set_progress_buffer(int progress) {
-     buffering_ProgressBar.setProgress(progress);
+        buffering_ProgressBar.setProgress(progress);
     }
 
     @Override
-    public void appear_progressbar() {
-        mpv.setProgressVisibility(true);
+    public Bitmap get_bitmap() {
+        Bitmap bitmap = cover.getDrawingCache();
+        if (bitmap == null) {
+            Log.d("nader", "bitmap is null");
+            return BitmapFactory.decodeResource(this.getResources(),
+                    R.drawable.placeholder);
+        }
+        return bitmap;
+    }
+
+    @Override
+    public void set_current_timer(String timer) {
+        Current.setText(timer);
     }
 
     private ServiceConnection mConnection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
             player_service.LocalBinder localBinder = (player_service.LocalBinder) service;
-            localBinder.set_presenter(presenter);
+            Service = localBinder.getService();
             isBind = true;
         }
 
@@ -161,6 +169,7 @@ public class MainActivity extends AppCompatActivity implements MVP_Main.view_stu
         super.onDestroy();
         if (isBind) {
             unbindService(mConnection);
+            Service.stopSelf();
             isBind = false;
         }
     }
@@ -177,5 +186,38 @@ public class MainActivity extends AppCompatActivity implements MVP_Main.view_stu
         isBind = savedInstanceState.getBoolean("serviceStatus");
     }
 
+    public static void change_playback(Context c, final ImageView v, final int src) {
+        final Animation anim_out = AnimationUtils.loadAnimation(c, android.R.anim.fade_out);
+        final Animation anim_in = AnimationUtils.loadAnimation(c, android.R.anim.fade_in);
+        anim_out.setAnimationListener(new Animation.AnimationListener() {
+            @Override
+            public void onAnimationStart(Animation animation) {
+            }
+
+            @Override
+            public void onAnimationRepeat(Animation animation) {
+            }
+
+            @Override
+            public void onAnimationEnd(Animation animation) {
+                v.setImageResource(src);
+                anim_in.setAnimationListener(new Animation.AnimationListener() {
+                    @Override
+                    public void onAnimationStart(Animation animation) {
+                    }
+
+                    @Override
+                    public void onAnimationRepeat(Animation animation) {
+                    }
+
+                    @Override
+                    public void onAnimationEnd(Animation animation) {
+                    }
+                });
+                v.startAnimation(anim_in);
+            }
+        });
+        v.startAnimation(anim_out);
+    }
 
 }
